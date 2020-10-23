@@ -17,76 +17,8 @@ class Tetris():
                                                    lines_cleared)
             env.step(potential_boards[board_of_choice_index])
 
-    To play a game with lookahead, generate_future_boards() must be called
-    on every board generated from its first call:
-
-        env.reset()
-        while not env.game_over:
-            (potential_boards,
-             lines_cleared, _) = env.generate_future_boards(None)
-
-            potential_next_boards = []
-            potential_next_clears = []
-            initial_board_indexes = []
-            for n, board in enumerate(potential_boards):
-                (next_boards,
-                next_line_clears, _) = env.generate_future_boards(board)
-                potential_next_boards.append(next_boards)
-                potential_next_clears.append(next_line_clears)
-                initial_board_indexes.extend([n]*len(next_boards))
-
-            next_board_of_choice_index = choose_a_board(
-                                                potential_next_boards,
-                                                potential_next_clears)
-            board_of_choice_index = initial_board_indexes[
-                                                next_board_of_choice_index]
-            env.step(potential_boards[board_of_choice_index])
-
-    Attributes
-    ----------
-    DTYPE : (string)
-        The data type of all numpy.ndarray objects created by this class.
-    TETROMINOS (tuple of tuple of numpy.ndarray)
-        The standard tetrominos in tetris and each of their possible
-        orientations overlayed on a 4x4 numpy.ndarry. Indexing is first
-        done by the tetromino, then by the orientation.
-    RC_RANGE (list of list of list of tuples)
-        The lowest level list contains all (row, column) indexes
-        of the given tetromino and orientation where the corresponding
-        numpy.ndarray is True.
-
-    width : (int)
-        The width of the game board, excluding borders.
-    height: (int)
-        The height of the game board, excluding borders.
-    max_spawns: (int) or (None)
-        The maximum number of tetrominos that can be spawned before
-        the game automatically ends. If None, the game will not end
-        until the player loses.
-    active_tetrominos: (list of int)
-        The indices [0-6] of tetrominos the game will use.
-    enable_draw: (bool)
-        If True, draw() will be called upon initialization and each time
-        step() is called.
-    show_images: (bool)
-        If True, draw() will create a new figure of the current game board
-        upon initialization and each time step() is called.
-    starting_board: (numpy.ndarray)
-        The initial board all games begin with.
-    current_board: (numpy.ndarray)
-        The current board of the active game.
-    intermediate_boards (list of numpy.ndarray) or None:
-        The reachable boards from the current board, not updated to remove
-        full Tetris lines.
-    current_tetromino: (int)
-        The index of the current tetromino.
-    next_tetromino: (int)
-        The index of the upcoming tetromino.
-    tetrominos_spawned: (int)
-        The number of tetrominos spawned.
-    game_over: (bool)
-        If True, the game has been lost by the player or tetrominos_spawned
-        has exceed max_spawns.
+    To play a game with lookahead, use the simulate method,
+    without or without a Pool object to make use of multiprocessing
 
     Methods
     -------
@@ -246,6 +178,8 @@ class Tetris():
                             for t in T]
                             for T in TETROMINOS]
 
+    OR_ITERATOR = [range(len(T)) for T in TETROMINOS]
+
     def __init__(self, width=10, height=20,
                  max_spawns=None, active_tetrominos=None, enable_draw=False,
                  show_images=False):
@@ -373,7 +307,6 @@ class Tetris():
         """
 
         self.tetrominos_spawned += 1
-
         if self.next_tetromino is not None:
             self.current_tetromino = self.next_tetromino
         else:
@@ -398,9 +331,6 @@ class Tetris():
         future_boards_lines_cleared : (numpy.ndarray)
             The number of lines cleared by reaching the corresponding board
             in updated_future_boards.
-        lookahead_board : (numpy.ndarray)
-            The same object as the input parameter, used to map the initial
-            board to the new boards.
 
         """
 
@@ -411,16 +341,10 @@ class Tetris():
             starting_board = self.current_board
             tetromino_id = self.current_tetromino
 
-        
         future_boards = self.depth_first_search(starting_board, tetromino_id)
-        
-        '''
-        future_boards = []
-        for orientation_id in range(len(self.TETROMINOS[tetromino_id])):
-            future_boards += self.depth_first_search(starting_board,
-                                                     tetromino_id,
-                                                     orientation_id)
-        '''
+
+        # For animation purposes, we may want to save the boards
+        # before lines have been cleared
         if lookahead_board is None:
             self.intermediate_boards = future_boards
 
@@ -428,140 +352,65 @@ class Tetris():
         future_boards_lines_cleared) = self.update_all_boards(
                                                     np.array(future_boards))
 
-        return (updated_future_boards, future_boards_lines_cleared,
-                lookahead_board)
+        return (updated_future_boards, future_boards_lines_cleared)
 
     def depth_first_search(self, board, tetromino_id):
-
-        source_node = (1+0j, 0)
-        visited_nodes = set()
-        boards_created = []
-
-        self.depth_first_search_recursive_call(board, tetromino_id, source_node,
-                       visited_nodes, boards_created)
-
-        return boards_created
-
-    def depth_first_search_recursive_call(self, board, tetromino_id, current_node,
-                  visited_nodes, boards_created):
-        
-        visited_nodes.add(current_node)
-        
-        node_coord, node_orient = current_node
-        x, y = int(node_coord.real), int(node_coord.imag)
-
-        nodes_to_explore = []
-        
-        test_node = (node_coord+1j, node_orient)
-        if test_node not in visited_nodes:
-            connected = True
-            for r, c in self.RC_ITERATOR[tetromino_id][node_orient]:
-                if board[y+1+r % self.height][x+c % self.width]:
-                    connected = False
-                    break
-            if connected:
-                nodes_to_explore += [test_node]
-            else:
-                new_board = board.copy()
-                for r, c in self.RC_ITERATOR[tetromino_id][node_orient]:
-                    new_board[y+r % self.height][x+c % self.width] = (
-                        self.TETROMINOS[tetromino_id][node_orient][r][c]
-                        * (tetromino_id + 1))
-                boards_created.append(new_board)
-
-        test_node = (node_coord+1, node_orient)
-        if test_node not in visited_nodes:
-            connected = True
-            for r, c in self.RC_ITERATOR[tetromino_id][node_orient]:
-                if board[y+r % self.height][x+1+c % self.width]:
-                    connected = False
-                    break
-            if connected:
-                nodes_to_explore += [test_node]
-
-        test_node = (node_coord-1, node_orient)
-        if test_node not in visited_nodes:
-            connected = True
-            for r, c in self.RC_ITERATOR[tetromino_id][node_orient]:
-                if board[y+r % self.height][x-1+c % self.width]:
-                    connected = False
-                    break
-            if connected:
-                nodes_to_explore += [test_node]
-        
-        for alt_orient in range(len(self.TETROMINOS[tetromino_id])):
-            test_node = (node_coord, alt_orient)
-            if test_node not in visited_nodes:
-                connected = True
-                for r, c in self.RC_ITERATOR[tetromino_id][alt_orient]:
-                    if board[y+r % self.height][x+c % self.width]:
-                        connected = False
-                        break
-                if connected:
-                    nodes_to_explore += [test_node]
-
-        for new_node in nodes_to_explore:
-            if new_node not in visited_nodes:
-                self.depth_first_search_recursive_call(board, tetromino_id, new_node, visited_nodes, boards_created)
-
-    def XXdepth_first_search(self, board, tetromino_id, orientation_id):
-        """Employs a DFS to locate reachable new board for a given tetromino.
+        """Explore all possible states reachable by a given tetromino.
 
         Parameters
         ----------
         board : (numpy.ndarray)
-            The initial board from which new boards will be explored.
+            The initial board the tetromino will explore.
         tetromino_id : (int)
-            The tetromino to be used to determine accessible boards.
-        orientation_id : (int)
-            The orientation of the tetromino given tetromino_id to be
-            used to determine accessible boards.
+            The index corresponding to the exploring tetromino.
 
         Returns
         -------
         boards_created : (list of numpy.ndarray)
-            The list of possible boards which can be created given the
-            specific tetromino and orientation.
+            The list of boards created by all possible piece placements.
 
         """
 
-        source_node = 1+0j
+        y = 0
+        while not np.any(board[y+1, 1:-1]):
+            y += 1
+
+        y = max([0, y-4])
+
+        source_node = (1+1j*y, 0)
         visited_nodes = set()
         boards_created = []
 
-        self.depth_first_search_recursive_call(board,
-                                               tetromino_id, orientation_id,
-                                               source_node, visited_nodes,
-                                               boards_created)
+        self.depth_first_search_recursive_call(
+                                        board, np.array(board, dtype='bool'),
+                                        tetromino_id,
+                                        source_node, visited_nodes,
+                                        boards_created)
 
         return boards_created
 
-    def XXdepth_first_search_recursive_call(self,
-                                          board,
-                                          tetromino_id, orientation_id,
+    def depth_first_search_recursive_call(self, real_board, board,
+                                          tetromino_id,
                                           current_node, visited_nodes,
                                           boards_created):
-        """ The DFS recursion function called on each new node.
+        """ Recursive call for implementation of DFS.
 
         Parameters
         ----------
+        real_board : (numpy.ndarray)
+            The original game board explored by the DFS.
         board : (numpy.ndarray)
-            The initial board from which new boards will be explored.
+            The original game board represented as booleans, used
+            for faster checking by the DFS.
         tetromino_id : (int)
-            The tetromino to be used to determine accessible boards.
-        orientation_id : (int)
-            The orientation of the tetromino given tetromino_id to be
-            used to determine accessible boards.
-        current_node : (complex)
-            The coordinates of the top left cell of the given tetromino
-            and orientation. The real part gives the column and the
-            imaginary part the row within the board.
+            The index corresponding to the exploring tetromino.
+        current_node : (tuple: complex, int)
+            The coordinates and current orientation id of the tetromino.
+            The real part is the column index, the imaginary the row index.
         visited_nodes : (set)
-            The set of all nodes visited by the DFS, given by complex
-            coordinates.
+            Set of nodes DFS has visited. Nodes have the form of current_node.
         boards_created : (list of numpy.ndarray)
-            The list of possible boards which can be created given the
-            specific tetromino and orientation.
+            The list of boards created by all possible piece placements.
 
         Returns
         -------
@@ -570,50 +419,65 @@ class Tetris():
         """
 
         visited_nodes.add(current_node)
-        x, y = int(current_node.real), int(current_node.imag)
 
-        nodes_to_explore = []
-        if current_node+1j not in visited_nodes:
+        node_coord, node_orient = current_node
+        x, y = int(node_coord.real), int(node_coord.imag)
+
+        nodes_to_explore = set()
+
+        test_node = (node_coord+1j, node_orient)
+        if test_node not in visited_nodes:
             connected = True
-            for r, c in self.RC_ITERATOR[tetromino_id][orientation_id]:
-                if board[y+1+r % self.height][x+c % self.width]:
+            for r, c in self.RC_ITERATOR[tetromino_id][node_orient]:
+                if board[y+1+r % self.height, x+c % self.width]:
                     connected = False
                     break
             if connected:
-                nodes_to_explore += [current_node+1j]
+                nodes_to_explore.add(test_node)
             else:
-                new_board = board.copy()
-                for r, c in self.RC_ITERATOR[tetromino_id][orientation_id]:
-                    new_board[y+r % self.height][x+c % self.width] = (
-                        self.TETROMINOS[tetromino_id][orientation_id][r][c]
-                        * (tetromino_id + 1))
-                boards_created.append(new_board)
+                new_board = real_board.copy()
+                fill_val = tetromino_id + 1
+                for r, c in self.RC_ITERATOR[tetromino_id][node_orient]:
+                    new_board[y+r % self.height, x+c % self.width] = fill_val
+                boards_created += [new_board]
 
-        if current_node+1 not in visited_nodes:
+        test_node = (node_coord+1, node_orient)
+        if test_node not in visited_nodes:
             connected = True
-            for r, c in self.RC_ITERATOR[tetromino_id][orientation_id]:
-                if board[y+r % self.height][x+1+c % self.width]:
+            for r, c in self.RC_ITERATOR[tetromino_id][node_orient]:
+                if board[y+r % self.height, x+1+c % self.width]:
                     connected = False
                     break
             if connected:
-                nodes_to_explore += [current_node+1]
+                nodes_to_explore.add(test_node)
 
-        if current_node-1 not in visited_nodes:
+        test_node = (node_coord-1, node_orient)
+        if test_node not in visited_nodes:
             connected = True
-            for r, c in self.RC_ITERATOR[tetromino_id][orientation_id]:
-                if board[y+r % self.height][x-1+c % self.width]:
+            for r, c in self.RC_ITERATOR[tetromino_id][node_orient]:
+                if board[y+r % self.height, x-1+c % self.width]:
                     connected = False
                     break
             if connected:
-                nodes_to_explore += [current_node-1]
+                nodes_to_explore.add(test_node)
+
+        for alt_orient in self.OR_ITERATOR[tetromino_id]:
+            test_node = (node_coord, alt_orient)
+            if test_node not in visited_nodes:
+                connected = True
+                for r, c in self.RC_ITERATOR[tetromino_id][alt_orient]:
+                    if board[y+r % self.height, x+c % self.width]:
+                        connected = False
+                        break
+                if connected:
+                    nodes_to_explore.add(test_node)
 
         for new_node in nodes_to_explore:
             if new_node not in visited_nodes:
-                self.depth_first_search_recursive_call(
-                                                board,
-                                                tetromino_id, orientation_id,
-                                                new_node, visited_nodes,
-                                                boards_created)
+                self.depth_first_search_recursive_call(real_board, board,
+                                                       tetromino_id,
+                                                       new_node, visited_nodes,
+                                                       boards_created)
 
     def update_all_boards(self, boards):
         """Clears the completed Tetris lines of a stack of game boards.
@@ -731,7 +595,13 @@ class Tetris():
 
         return image[4::, :]
 
-def simulate_game(pool, env, decision_maker):
+    def simulate(self, decision_maker, pool=None):
+        if pool is not None:
+            return simulate_with_pool(self, decision_maker, pool)
+        else:
+            return simulate_without_pool(self, decision_maker)
+
+def simulate_with_pool(env, decision_maker, pool):
     """Using multiprocessing, simulates a game of Tetris with lookahead.
 
     Parameters
@@ -743,7 +613,7 @@ def simulate_game(pool, env, decision_maker):
     decision_maker : (function handle)
         A function to determine which state to pursue. Must take in
         two inputs:
-            boards (list of numpy.ndarray)
+            boards (numpy.ndarray)
             line_clears (numpy.ndarray)
         The function then returns the index corresponding to the
         desired state to pursue.
@@ -759,12 +629,13 @@ def simulate_game(pool, env, decision_maker):
     env.reset()
     while not env.game_over:
 
-        potential_boards, _, _ = env.generate_future_boards(None)
+        potential_boards, _ = env.generate_future_boards(None)
         pool_output = pool.map(env.generate_future_boards, potential_boards)
 
         potential_next_boards = np.concatenate([P[0] for P in pool_output],
                                                axis=0)
-        potential_next_clears = [n for P in pool_output for n in P[1]]
+        potential_next_clears = np.concatenate([P[1] for P in pool_output])
+
         potential_board_indexes = [n for n, P in enumerate(pool_output)
                                    for k in range(P[0].shape[0])]
 
@@ -776,7 +647,7 @@ def simulate_game(pool, env, decision_maker):
 
     return env.tetrominos_spawned
 
-def simulate_game_no_pool(env, decision_maker):
+def simulate_without_pool(env, decision_maker):
     """Without multiprocessing, simulates a game of Tetris with lookahead.
 
     Parameters
@@ -786,7 +657,7 @@ def simulate_game_no_pool(env, decision_maker):
     decision_maker : (function handle)
         A function to determine which state to pursue. Must take in
         two inputs:
-            boards (list of numpy.ndarray)
+            boards (numpy.ndarray)
             line_clears (numpy.ndarray)
         The function then returns the index corresponding to the
         desired state to pursue.
@@ -801,18 +672,19 @@ def simulate_game_no_pool(env, decision_maker):
 
     env.reset()
     while not env.game_over:
-        (potential_boards,
-         lines_cleared, _) = env.generate_future_boards(None)
+        potential_boards, _ = env.generate_future_boards(None)
 
         potential_next_boards = []
         potential_next_clears = []
         initial_board_indexes = []
         for n, board in enumerate(potential_boards):
-            (next_boards,
-            next_line_clears, _) = env.generate_future_boards(board)
+            next_boards, next_line_clears = env.generate_future_boards(board)
             potential_next_boards.append(next_boards)
             potential_next_clears.append(next_line_clears)
             initial_board_indexes.extend([n]*len(next_boards))
+
+        potential_next_boards = np.concatenate(potential_next_boards)
+        potential_next_clears = np.concatenate(potential_next_clears)
 
         next_board_of_choice_index = decision_maker(
                                             potential_next_boards,
@@ -823,16 +695,4 @@ def simulate_game_no_pool(env, decision_maker):
 
     return env.tetrominos_spawned
 
-if __name__=='__main__':
-
-    def chooser(boards, clears):
-        choice = np.random.choice(len(boards))
-        return choice
-
-    np.random.seed(0)
-    T = Tetris(width=6, height=12)
-    N = 30
-    for k in range(N):
-        simulate_game_no_pool(T, chooser)
-
-# EOF
+#EOF

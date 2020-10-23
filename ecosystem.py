@@ -1,8 +1,31 @@
 import numpy as np
 
 class Value_Function():
+    """An indiviudal with certain genes to determine a value of a vector.
+
+    Methods
+    -------
+    evaluate_states(numpy.ndarray, numpy.ndarray) --> (int)
+        Determines the index of the optimal board within the given list.
+    mutate(numpy.ndarray) --> (None):
+        Mutates the genes of the indiviudal according given by the input.
+    """
 
     def __init__(self, heuristics, N):
+        """An indiviudal with certain genes to determine a value of a vector.
+
+        Parameters
+        ----------
+        heuristics : (heuristics.Heuristics)
+            Rating object to determine value vector of a state.
+        N : (int)
+            The number of ratings produced by heuristics.
+
+        Returns
+        -------
+        None.
+
+        """
 
         self.heuristics = heuristics
         self.N = N
@@ -15,6 +38,21 @@ class Value_Function():
         self.parameters = [self.weights]
 
     def evaluate_states(self, boards, clears):
+        """Determines the index of the optimal board within the given list.
+
+        Parameters
+        ----------
+        boards : (numpy.ndarray)
+            A stacked array of boards to evaluate over.
+        clears : (numpy.ndarray)
+            The number of lines cleared for each board.
+
+        Returns
+        -------
+        (int)
+            The index of the optimal board.
+
+        """
 
         raw_values = self.heuristics.determine_values(boards, clears)
         evaluation = np.sum(self.weights * raw_values, axis=0)
@@ -22,6 +60,17 @@ class Value_Function():
         return np.argmax(evaluation)
 
     def mutate(self, mutation):
+        """Mutates the genes of the indiviudal according given by the input.
+        Parameters
+        ----------
+        mutation : (numpy.ndarray)
+            Array describing which genes of which parameters to update.
+
+        Returns
+        -------
+        None.
+
+        """
         self.weights *= ((mutation[0] *
                           np.array(np.random.normal(size=(self.N,1),
                                                     scale=2),
@@ -30,24 +79,66 @@ class Value_Function():
                                                         dtype='float32')))
 
 class Ecosystem():
+    """Environment within which evolution takes place to optimize fitness.
 
-    def __init__(self, environment, simulator, heuristics, generation_size):
+    Methods
+    -------
+    evaluate_population(int, Pool.pool) --> (list)
+        Determines the fitness of each indiviudal in the current generation.
+    mate(Value_Function, Value_Function) --> Value Function
+        Mixes two parents with 2 index slicing.
+    evolve(int, int, int, Pool.pool) --> (float, float)
+        Evolves the current generation into a new one using their fitness
+        within the environment.
+    """
+    def __init__(self, env, heuristics, generation_size):
+        """Environment within which evolution takes place to optimize fitness.
 
-        self.environment = environment
-        self.simulator = simulator
+        Parameters
+        ----------
+        env : (tetris.Tetris)
+            Tetris environment in which fitness will be measured.
+        heuristics : (heuristics.Heuristics)
+            Ratings environment to feed to individuls.
+        generation_size : (int)
+            Number of indiviudals within the generation.
+
+        Returns
+        -------
+        None.
+
+        """
+
+        self.env = env
         self.heuristics = heuristics
         self.generation_size = generation_size
+        self.generation_number = 0
 
-        self.N = heuristics.determine_values([environment.current_board],
+        self.N = heuristics.determine_values([env.current_board],
                                              [0]).shape[0]
         self.generation = [Value_Function(heuristics, self.N)
                            for _ in range(generation_size)]
         self.param_count = len(self.generation[0].parameters)
-        
+
         self.fitness_scores = None
         self.num_elites = None
 
-    def evaluate_population(self, pool, number_of_games):
+    def evaluate_population(self, number_of_games, pool=None):
+        """Determine the fitness of the current generation.
+
+        Parameters
+        ----------
+        number_of_games : (int)
+            Number of games to average fitness over.
+        pool : (Pool.pool) or (None), optional
+            Pool to perform multiprocessing over. The default is None.
+
+        Returns
+        -------
+        rewards_achieved : (list)
+            The success/fitness of each indiviudal.
+
+        """
 
         all_time_best = 0
         rewards_achieved = []
@@ -55,25 +146,42 @@ class Ecosystem():
 
             reward = 0
             for game in range(number_of_games):
-                reward += self.simulator(pool, self.environment,
-                                         individual.evaluate_states)
+                reward += self.env.simulate(individual.evaluate_states,
+                                            pool=pool)
 
             if reward > all_time_best:
                 all_time_best = reward
 
             rewards_achieved.append(reward / number_of_games)
-            
+
             s = '\r{:d} / {:<3d} Individuals Tested [Best Score: {:d}]'
             print(s.format(n+1, self.generation_size, all_time_best), end='')
         print()
+
         return rewards_achieved
 
     def mate(self, husband, wife):
+        """Mixes two parents with 2 index slicing.
+
+        Parameters
+        ----------
+        husband : Value_Function
+            One of the parents to draw genes from.
+        wife : Value_Function
+            One of the parents to draw genes from.
+
+        Returns
+        -------
+        child : Value_Function
+            The new individual with genes from both parents.
+
+        """
 
         child = Value_Function(self.heuristics, self.N)
 
         # TODO: Experiment with applying two-point crossover
-        # to all chromosones at once, so their relationship is preserved
+        # to all chromosones (if there are mutliple) at once,
+        # so their relationship is preserved
         for p_child, p_husband, p_wife in zip(child.parameters,
                                               husband.parameters,
                                               wife.parameters):
@@ -87,11 +195,32 @@ class Ecosystem():
 
         return child
 
-    def evolve(self,
-               pool, number_of_games, generation_size, mutation_probability):
+    def evolve(self, number_of_games, generation_size,
+               mutation_probability, pool=None):
+        """Evolves the current generation into a new one using their fitness.
 
-        fitness_scores = np.array(self.evaluate_population(pool,
-                                                           number_of_games))
+        Parameters
+        ----------
+        number_of_games : (int)
+            The number of games to average fitness over.
+        generation_size : (int)
+            The size of the new generation.
+        mutation_probability : (float)
+            Probability a single gene is mutated.
+        pool : (Pool.pool) or (None), optional
+            Pool to perform multiprocessing over. The default is None.
+
+        Returns
+        -------
+        mean_population_score : (float)
+            The mean fitness of the generation evolved.
+        mean_elite_score : (float)
+            The mean fitness of the best performers of the generation evolved.
+
+        """
+
+        fitness_scores = np.array(self.evaluate_population(number_of_games,
+                                                           pool=pool))
         mean_population_score = np.sum(fitness_scores) / self.generation_size
 
         elite_set = np.zeros((0,))
@@ -122,7 +251,7 @@ class Ecosystem():
                                                   mutation_probability])
         for child, mutation in zip(children, mutation_occurences):
             child.mutate(mutation)
-        
+
         for child in children:
             for param in child.parameters:
                 param /= np.max(np.abs(param))
@@ -131,6 +260,7 @@ class Ecosystem():
         self.generation_size = generation_size
         self.fitness_scores = fitness_scores
         self.num_elites = num_elites
+        self.generation_number += 1
 
         return mean_population_score, mean_elite_score
 
