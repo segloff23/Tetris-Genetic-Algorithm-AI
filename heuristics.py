@@ -141,8 +141,11 @@ class Heuristics():
                             self.column_transitions,
                             self.bumpiness
                          ], dtype='float32')
+        values_sqr = values ** 2
+        
+        full_rating = np.concatenate([values, values_sqr])
 
-        return values
+        return full_rating
 
     def parse_states(self, boards, clears):
         """ Loads stack of boards and clears into the heuristic class.
