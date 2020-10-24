@@ -1,6 +1,5 @@
 # Tetris-Genetic-Algorithm-AI
-Work in Progress: A Tetris AI developed using evolutionary algorithms. Sample ecosystems evolved over five generations included.
-
+Work in Progress: A Tetris AI developed using evolutionary algorithms.
 Created in Python 3.6
 
 Required modules:
