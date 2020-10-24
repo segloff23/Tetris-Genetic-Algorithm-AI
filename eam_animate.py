@@ -12,11 +12,11 @@ except:
 
 ###############################################################################
 
-EXP = 1 # Experiment to laod ecosystem from
-MAX_SPAWNS = 300 # If None, game ends only if agent loses
+EXP = 2 # Experiment to laod ecosystem from
+MAX_SPAWNS = None # If None, game ends only if agent loses
 SEED = 0 # Specifiy seed to illustrate game on
 NEW_BOARD_SIZE = (10, 20) # If None, use ecosystem preset environment
-USE_POOL = True # Make use of multiprocessing
+USE_POOL = False # Make use of multiprocessing
 
 # Create sequence of figures illustrating game
 # WARNING: To prevent too many figures from being created,
@@ -26,7 +26,7 @@ DRAW = False
 # Create video file using mp4 codec of the given game
 # WARNING: To prevent excessive video lengths,
 #           do not set MAX_SPAWNS to equal None
-ANIMATE = False
+ANIMATE = True
 FPS = 30 # Each move is given by 1 or 2 frames, depending on line clears
 IMAGE_RESCALE = 50 # Scale up board from smaller simulation size
 
@@ -197,14 +197,15 @@ def main():
         ecosystem.env.enable_draw = False
         ecosystem.env.show_images = False
 
-    if USE_POOL is not None:
+    if USE_POOL:
         from multiprocessing import Pool, cpu_count
         pool = Pool(cpu_count())
+    else:
+        pool=None
 
     np.random.seed(SEED)
     results = simulate_and_save(ecosystem.env, best_individual.evaluate_states,
                                 save_boards=ANIMATE, pool=pool)
-
     if not ANIMATE:
         score = results
         print('Seed {}: {}'.format(SEED, score))

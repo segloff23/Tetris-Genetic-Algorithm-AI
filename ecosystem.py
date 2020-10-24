@@ -11,13 +11,11 @@ class Value_Function():
         Mutates the genes of the indiviudal according given by the input.
     """
 
-    def __init__(self, heuristics, N):
+    def __init__(self, N):
         """An indiviudal with certain genes to determine a value of a vector.
 
         Parameters
         ----------
-        heuristics : (heuristics.Heuristics)
-            Rating object to determine value vector of a state.
         N : (int)
             The number of ratings produced by heuristics.
 
@@ -27,25 +25,27 @@ class Value_Function():
 
         """
 
-        self.heuristics = heuristics
         self.N = N
 
         self.weights = np.array(np.random.normal(size=(self.N,1),
                                                  scale=50),
                                 dtype='float32')
         self.weights /= np.max(np.abs(self.weights))
+        
+        self.exponents = np.abs(np.array(np.random.normal(size=(self.N,1),
+                                                 scale=2),
+                                         dtype='float32'))
+        self.exponents = np.clip(self.exponents, 0, 5)
 
-        self.parameters = [self.weights]
+        self.parameters = [self.weights, self.exponents]
 
-    def evaluate_states(self, boards, clears):
+    def evaluate_states(self, ratings):
         """Determines the index of the optimal board within the given list.
 
         Parameters
         ----------
-        boards : (numpy.ndarray)
-            A stacked array of boards to evaluate over.
-        clears : (numpy.ndarray)
-            The number of lines cleared for each board.
+        ratings : (numpy.ndarray)
+            Ratings vector for each board.
 
         Returns
         -------
@@ -54,8 +54,8 @@ class Value_Function():
 
         """
 
-        raw_values = self.heuristics.determine_values(boards, clears)
-        evaluation = np.sum(self.weights * raw_values, axis=0)
+        evaluation = np.sum(self.weights
+                            * (np.power(ratings, self.exponents)), axis=0)
 
         return np.argmax(evaluation)
 
@@ -71,12 +71,23 @@ class Value_Function():
         None.
 
         """
-        self.weights *= ((mutation[0] *
+        
+        for k, param in enumerate(self.parameters):
+            if k == 0:
+                param *= ((mutation[0] *
                           np.array(np.random.normal(size=(self.N,1),
                                                     scale=2),
                                    dtype='float32'))
                          + ((1 - mutation[0]) * np.ones((self.N,1),
                                                         dtype='float32')))
+            elif k == 1:
+                param *= ((mutation[1] *
+                            np.abs(np.array(np.random.normal(size=(self.N,1),
+                                                    scale=2),
+                                   dtype='float32')))
+                           + ((1 - mutation[1]) * np.ones((self.N,1),
+                                                        dtype='float32')))
+                param[:] = np.clip(param, 0, 5)
 
 class Ecosystem():
     """Environment within which evolution takes place to optimize fitness.
@@ -116,7 +127,7 @@ class Ecosystem():
 
         self.N = heuristics.determine_values([env.current_board],
                                              [0]).shape[0]
-        self.generation = [Value_Function(heuristics, self.N)
+        self.generation = [Value_Function(self.N)
                            for _ in range(generation_size)]
         self.param_count = len(self.generation[0].parameters)
 
@@ -143,11 +154,12 @@ class Ecosystem():
         all_time_best = 0
         rewards_achieved = []
         for n, individual in enumerate(self.generation):
-
+            decision_maker = lambda x,y : (individual.evaluate_states(
+                                    self.heuristics.determine_values(x, y)))
+            
             reward = 0
             for game in range(number_of_games):
-                reward += self.env.simulate(individual.evaluate_states,
-                                            pool=pool)
+                reward += self.env.simulate(decision_maker, pool=pool)
 
             if reward > all_time_best:
                 all_time_best = reward
@@ -177,17 +189,22 @@ class Ecosystem():
 
         """
 
-        child = Value_Function(self.heuristics, self.N)
+        child = Value_Function(self.N)
 
         # TODO: Experiment with applying two-point crossover
         # to all chromosones (if there are mutliple) at once,
         # so their relationship is preserved
+        k = 0
         for p_child, p_husband, p_wife in zip(child.parameters,
                                               husband.parameters,
                                               wife.parameters):
 
             a, b = np.random.choice(self.N, size=(2,), replace=False)
-            dx, dy = np.random.randint(-10, 11, size=(2,))
+            if k == 0:
+                dx, dy = np.random.randint(-10, 11, size=(2,))
+                k += 1
+            else:
+                dx, dy = 1, 1
 
             p_child[0:a] = dx * p_husband[0:a]
             p_child[a:b] = dy * p_wife[a:b]
@@ -253,8 +270,11 @@ class Ecosystem():
             child.mutate(mutation)
 
         for child in children:
-            for param in child.parameters:
-                param /= np.max(np.abs(param))
+            scale = np.max(np.abs(child.parameters[0]))
+            if scale != 0:
+                child.parameters[0] /= scale
+            else:
+                child.parameters[0][:] = np.random.normal(size=(self.N,1), scale=50)
 
         self.generation = [self.generation[k] for k in elite_set] + children
         self.generation_size = generation_size

@@ -9,13 +9,6 @@ from tetris import Tetris
 from heuristics import Heuristics
 from ecosystem import Ecosystem
 
-try:
-    from torch.utils.tensorboard import SummaryWriter
-    os.environ['TF_CPP_MIN_LOG_LEVEL'] = '3'
-    LOGGING = True
-except:
-    LOGGING = False
-
 ###############################################################################
 
 # GAME VARIABLES
@@ -28,14 +21,15 @@ ACTIVE_TETROMINOS = None # If None, all tetrominos are used
 GEN_SIZE = 100 # Minimum size is 2
 GAME_SIZE = 5 # Number of games to test fitness over
 MUT_PROB = 0.2 # Probability of an individual gene mutating
-N_EPISODES = 10 # Number of generations to iterate through
+N_EPISODES = 1000 # Number of generations to iterate through
 
 # DATA VARIABLES
-EXP = 1 # Experiment number
+EXP = 3 # Experiment number
 LOAD = False # Load from file given be EXP or not
 SAVE_FREQ = 5 * 60 # How often to save over results in seconds
 USE_POOL = True # Make use of multiprocessing for simulations
 SEED = 1 # Initialize with a specific seed to replicate results
+LOGGING = False # Log data for tensorboard live visualization
 
 ###############################################################################
 
@@ -69,11 +63,12 @@ def validate_save_file():
         s = 'Warning: An ecosystem exists for experiment #{}.\n'
         print(s.format(EXP) +'This file will be overwritten.')
 
-        while False:
+        while True:
             response = input('Continue? (y/n) : ')
             if response == 'n':
                 return False
             elif response == 'y':
+                print()
                 return True
             else:
                 print('Invalid input. Please try again.', end='')
@@ -103,8 +98,13 @@ def main():
             ecosystem = Ecosystem(env, heuristics, GEN_SIZE)
             print('Ecosystem created.')
 
-    if LOGGING:
+    try:
+        from torch.utils.tensorboard import SummaryWriter
+        os.environ['TF_CPP_MIN_LOG_LEVEL'] = '3'
         writer = SummaryWriter('./logs/exp' + str(EXP))
+    except:
+        print('torch.utils.tensorboard not found, logging disabled.')
+        
 
     if USE_POOL:
         from multiprocessing import Pool, cpu_count
