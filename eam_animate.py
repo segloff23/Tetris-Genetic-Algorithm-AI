@@ -12,11 +12,11 @@ except:
 
 ###############################################################################
 
-EXP = 2 # Experiment to laod ecosystem from
+EXP = 3 # Experiment to laod ecosystem from
 MAX_SPAWNS = None # If None, game ends only if agent loses
-SEED = 0 # Specifiy seed to illustrate game on
+SEED = 1 # Specifiy seed to illustrate game on
 NEW_BOARD_SIZE = (10, 20) # If None, use ecosystem preset environment
-USE_POOL = False # Make use of multiprocessing
+USE_POOL = True # Make use of multiprocessing
 
 # Create sequence of figures illustrating game
 # WARNING: To prevent too many figures from being created,
@@ -26,7 +26,7 @@ DRAW = False
 # Create video file using mp4 codec of the given game
 # WARNING: To prevent excessive video lengths,
 #           do not set MAX_SPAWNS to equal None
-ANIMATE = True
+ANIMATE = False
 FPS = 30 # Each move is given by 1 or 2 frames, depending on line clears
 IMAGE_RESCALE = 50 # Scale up board from smaller simulation size
 
@@ -115,7 +115,8 @@ def simulate_and_save(env, decision_maker, save_boards=False, pool=None):
                 transition = env.intermediate_boards[state_of_choice_index]
                 image_list.append(env.draw(alternate_board=transition))
             image_list.append(env.draw())
-        print('\rStep {}'.format(env.tetrominos_spawned), end='')
+        if env.tetrominos_spawned % 100 == 0:
+            print('\rStep {}'.format(env.tetrominos_spawned), end='')
     print()
 
     if save_boards:
@@ -181,10 +182,9 @@ def main():
     best_individual = ecosystem.generation[0]
 
     ecosystem.env.max_spawns = MAX_SPAWNS
-
     if NEW_BOARD_SIZE is not None:
         ecosystem.env.change_dimensions(*NEW_BOARD_SIZE)
-        best_individual.heuristics.alter_dimensions(ecosystem.env.width,
+        ecosystem.heuristics.alter_dimensions(ecosystem.env.width,
                                                     ecosystem.env.height)
 
     if ANIMATE and VIDEO:
@@ -203,8 +203,11 @@ def main():
     else:
         pool=None
 
+    decision_maker = lambda x,y : (best_individual.evaluate_states(
+                                ecosystem.heuristics.determine_values(x, y)))
+
     np.random.seed(SEED)
-    results = simulate_and_save(ecosystem.env, best_individual.evaluate_states,
+    results = simulate_and_save(ecosystem.env, decision_maker,
                                 save_boards=ANIMATE, pool=pool)
     if not ANIMATE:
         score = results
