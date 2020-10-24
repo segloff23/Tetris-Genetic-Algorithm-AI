@@ -1,17 +1,22 @@
+
 import numpy as np
 
-class Value_Function():
-    """An indiviudal with certain genes to determine a value of a vector.
+from collections import namedtuple
+
+class Individual():
+    """An indiviudal with certain genes (model_values) which determine choices.
 
     Methods
     -------
-    evaluate_states(numpy.ndarray, numpy.ndarray) --> (int)
-        Determines the index of the optimal board within the given list.
-    mutate(numpy.ndarray) --> (None):
-        Mutates the genes of the indiviudal according given by the input.
+    initialize_model_values(None) --> (None)
+        Runs the model's initializer on all parameters.
+    clip_model_values(None) --> (None)
+        Clips the model's values acoording to the given settings.
+    mutate(int) --> (None):
+        Mutates the genes of the indiviudal with given probability.
     """
 
-    def __init__(self, N):
+    def __init__(self, model):
         """An indiviudal with certain genes to determine a value of a vector.
 
         Parameters
@@ -25,69 +30,46 @@ class Value_Function():
 
         """
 
-        self.N = N
+        self.model = model
 
-        self.weights = np.array(np.random.normal(size=(self.N,1),
-                                                 scale=50),
-                                dtype='float32')
-        self.weights /= np.max(np.abs(self.weights))
-        
-        self.exponents = np.abs(np.array(np.random.normal(size=(self.N,1),
-                                                 scale=2),
-                                         dtype='float32'))
-        self.exponents = np.clip(self.exponents, 0, 5)
+        self.model_values = []
+        self.initialize_model_values()
+        self.clip_model_values()
 
-        self.parameters = [self.weights, self.exponents]
-
-    def evaluate_states(self, ratings):
-        """Determines the index of the optimal board within the given list.
-
-        Parameters
-        ----------
-        ratings : (numpy.ndarray)
-            Ratings vector for each board.
-
-        Returns
-        -------
-        (int)
-            The index of the optimal board.
-
+    def initialize_model_values(self):
+        """Runs the model's initializer on all parameters.
         """
+        for settings in self.model:
+            self.model_values += [settings.init(settings.size).astype(settings.dtype)]
 
-        evaluation = np.sum(self.weights
-                            * (np.power(ratings, self.exponents)), axis=0)
+    def clip_model_values(self):
+        """Clips the model's values acoording to the given settings.
+        """
+        for value, settings in zip(self.model_values, self.model):
+            if settings.limit is not None:
+                value[:] = np.clip(value, *settings.limit)
 
-        return np.argmax(evaluation)
-
-    def mutate(self, mutation):
-        """Mutates the genes of the indiviudal according given by the input.
+    def mutate(self, mut_prob):
+        """Mutates the genes of the indiviudal with given probability.
         Parameters
         ----------
-        mutation : (numpy.ndarray)
-            Array describing which genes of which parameters to update.
+        mut_prob : (int)
+            Probability of a gene being mutated.
 
         Returns
         -------
         None.
 
         """
-        
-        for k, param in enumerate(self.parameters):
-            if k == 0:
-                param *= ((mutation[0] *
-                          np.array(np.random.normal(size=(self.N,1),
-                                                    scale=2),
-                                   dtype='float32'))
-                         + ((1 - mutation[0]) * np.ones((self.N,1),
-                                                        dtype='float32')))
-            elif k == 1:
-                param *= ((mutation[1] *
-                            np.abs(np.array(np.random.normal(size=(self.N,1),
-                                                    scale=2),
-                                   dtype='float32')))
-                           + ((1 - mutation[1]) * np.ones((self.N,1),
-                                                        dtype='float32')))
-                param[:] = np.clip(param, 0, 5)
+        for value, settings in zip(self.model_values, self.model):
+
+            mut_selection = np.random.choice([0, 1], size=settings.size,
+                                             p=[1-mut_prob, mut_prob])
+            mutated_value = (value *
+                        settings.mutator(settings.size).astype(settings.dtype))
+            value[:] = np.where(mut_selection, mutated_value, value)
+
+        self.clip_model_values()
 
 class Ecosystem():
     """Environment within which evolution takes place to optimize fitness.
@@ -102,7 +84,8 @@ class Ecosystem():
         Evolves the current generation into a new one using their fitness
         within the environment.
     """
-    def __init__(self, env, heuristics, generation_size):
+    def __init__(self, env, heuristics, generation_size, base_model, evaluator,
+                 model_file_name):
         """Environment within which evolution takes place to optimize fitness.
 
         Parameters
@@ -113,6 +96,11 @@ class Ecosystem():
             Ratings environment to feed to individuls.
         generation_size : (int)
             Number of indiviudals within the generation.
+        base_model : (MODEL.model)
+            Named tuple containing chromosones and their settings.
+        evaluator : (function handle)
+            Function used to evaluate boards using model values and
+            the boards' ratings.
 
         Returns
         -------
@@ -123,16 +111,35 @@ class Ecosystem():
         self.env = env
         self.heuristics = heuristics
         self.generation_size = generation_size
-        self.generation_number = 0
+        self.base_model = base_model
+        self.evaluator = evaluator
+        self.model_file_name = model_file_name
 
         self.N = heuristics.determine_values([env.current_board],
                                              [0]).shape[0]
-        self.generation = [Value_Function(self.N)
-                           for _ in range(generation_size)]
-        self.param_count = len(self.generation[0].parameters)
 
+        self.model = self.update_base_model()
+        self.generation = [Individual(self.model)
+                           for _ in range(generation_size)]
+
+        self.generation_number = 0
         self.fitness_scores = None
         self.num_elites = None
+
+    def update_base_model(self):
+
+        new_settings = {}
+        for field, settings in zip(self.base_model._fields, self.base_model):
+            true_size = []
+            for d in settings.size:
+                if d is None:
+                    true_size.append(self.N)
+                else:
+                    true_size.append(d)
+            true_size = tuple(true_size)
+            new_settings[field] = settings._replace(size=true_size)
+
+        return self.base_model._replace(**new_settings)
 
     def evaluate_population(self, number_of_games, pool=None):
         """Determine the fitness of the current generation.
@@ -154,9 +161,10 @@ class Ecosystem():
         all_time_best = 0
         rewards_achieved = []
         for n, individual in enumerate(self.generation):
-            decision_maker = lambda x,y : (individual.evaluate_states(
-                                    self.heuristics.determine_values(x, y)))
-            
+            decision_maker = lambda B, C : (
+                self.evaluator(*individual.model_values,
+                               self.heuristics.determine_values(B, C)))
+
             reward = 0
             for game in range(number_of_games):
                 reward += self.env.simulate(decision_maker, pool=pool)
@@ -189,26 +197,21 @@ class Ecosystem():
 
         """
 
-        child = Value_Function(self.N)
+        child = Individual(self.model)
 
         # TODO: Experiment with applying two-point crossover
         # to all chromosones (if there are mutliple) at once,
         # so their relationship is preserved
-        k = 0
-        for p_child, p_husband, p_wife in zip(child.parameters,
-                                              husband.parameters,
-                                              wife.parameters):
 
-            a, b = np.random.choice(self.N, size=(2,), replace=False)
-            if k == 0:
-                dx, dy = np.random.randint(-10, 11, size=(2,))
-                k += 1
-            else:
-                dx, dy = 1, 1
-
-            p_child[0:a] = dx * p_husband[0:a]
-            p_child[a:b] = dy * p_wife[a:b]
-            p_child[b::] = dx * p_husband[b::]
+        for v_child, v_husband, v_wife in zip(child.model_values,
+                                              husband.model_values,
+                                              wife.model_values):
+            slices = np.random.choice(self.N, size=(2,), replace=False)
+            slices.sort()
+            a, b = slices
+            v_child[0:a] = v_husband[0:a]
+            v_child[a:b] = v_wife[a:b]
+            v_child[b::] = v_husband[b::]
 
         return child
 
@@ -260,21 +263,8 @@ class Ecosystem():
                                         p=reproduction_probability)
         children = [self.mate(*parents) for parents in parents_list]
 
-        mutation_occurences = np.random.choice([0, 1],
-                                               size=(generation_size,
-                                                     self.param_count,
-                                                     self.N, 1),
-                                               p=[1-mutation_probability,
-                                                  mutation_probability])
-        for child, mutation in zip(children, mutation_occurences):
-            child.mutate(mutation)
-
         for child in children:
-            scale = np.max(np.abs(child.parameters[0]))
-            if scale != 0:
-                child.parameters[0] /= scale
-            else:
-                child.parameters[0][:] = np.random.normal(size=(self.N,1), scale=50)
+            child.mutate(mutation_probability)
 
         self.generation = [self.generation[k] for k in elite_set] + children
         self.generation_size = generation_size
@@ -284,5 +274,48 @@ class Ecosystem():
 
         return mean_population_score, mean_elite_score
 
+def generate_model(model_names, model_sizes, model_limits,
+                   model_initializers, model_dtypes, model_mutators):
+    """Combines various model parameters into the MODEL named tuple class.
 
+    Parameters
+    ----------
+    model_names : (list of strings)
+        The names of each chromosone in the model.
+    model_sizes : (list of tuples of ints or None)
+        The dimensions of each chromosone. Use None to denote the dimension
+        should be filled with that of the ratings function from heuristics.
+    model_limits : (list of None or tuples of any num type or None)
+        Limits the given chromosones should be clipped to. Use just None
+        to denote no clipping, and (None, a) or (a, None) to clip either
+        only above or only below.
+    model_initializers : (function handles)
+        Functions to initialize the model with. Must take in a tuple
+        representing the size of the chromosone, identical to model_sizes
+    model_dtypes : (strings)
+        Name of data type to be used for that parameter,
+        i.e., 'int32' or 'float64.'
+    model_mutators : (function handles)
+        Functions to mutate the models with via multiplication,
+        i.e., new_model = old_model * mutation.
 
+    Returns
+    -------
+    MODEL.model
+        The MODEL object used to determine how individuals behave.
+
+    """
+    global MODEL # Necessary for pickling
+    global SETTINGS # Necessary for pickling
+
+    MODEL = namedtuple('MODEL', model_names)
+    SETTINGS = namedtuple('SETTINGS', ['size', 'limit', 'init', 'dtype', 'mutator'])
+    model_input = []
+    for name, size, limit, init, dtype, mutator in zip(model_names, model_sizes,
+                                                model_limits, model_initializers,
+                                                model_dtypes, model_mutators):
+        model_input += [SETTINGS(size, limit, init, dtype, mutator)]
+
+    return MODEL(*model_input)
+
+#EOF

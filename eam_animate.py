@@ -1,6 +1,6 @@
 
 import numpy as np
-import pickle
+import dill as pickle
 
 try:
     import cv2

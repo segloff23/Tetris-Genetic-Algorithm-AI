@@ -1,6 +1,7 @@
 
 import time
-import pickle
+import dill as pickle
+#import pickle
 import os
 import sys
 sys.path.append('.') # Seems to prevent issue with multiproccessing
@@ -18,13 +19,14 @@ MAX_SPAWNS = None # If None, games last until agent loses
 ACTIVE_TETROMINOS = None # If None, all tetrominos are used
 
 # EVOLUTION VARIABLES
-GEN_SIZE = 100 # Minimum size is 2
-GAME_SIZE = 5 # Number of games to test fitness over
+MODEL_NAME = 'model_wed'
+GEN_SIZE = 10 # Minimum size is 2
+GAME_SIZE = 1 # Number of games to test fitness over
 MUT_PROB = 0.2 # Probability of an individual gene mutating
-N_EPISODES = 1000 # Number of generations to iterate through
+N_EPISODES = 1 # Number of generations to iterate through
 
 # DATA VARIABLES
-EXP = 3 # Experiment number
+EXP = 2 # Experiment number
 LOAD = False # Load from file given be EXP or not
 SAVE_FREQ = 5 * 60 # How often to save over results in seconds
 USE_POOL = True # Make use of multiprocessing for simulations
@@ -95,16 +97,26 @@ def main():
         if not valid_save:
             return
         else:
-            ecosystem = Ecosystem(env, heuristics, GEN_SIZE)
+            from importlib import import_module
+            from ecosystem import generate_model
+
+            model_generator = import_module('models.' + MODEL_NAME)
+            model_settings, evaluator = model_generator.get_model_settings()
+            model = generate_model(*model_settings)
+
+            ecosystem = Ecosystem(env, heuristics, GEN_SIZE, model, evaluator,
+                                  MODEL_NAME)
             print('Ecosystem created.')
 
-    try:
-        from torch.utils.tensorboard import SummaryWriter
-        os.environ['TF_CPP_MIN_LOG_LEVEL'] = '3'
-        writer = SummaryWriter('./logs/exp' + str(EXP))
-    except:
-        print('torch.utils.tensorboard not found, logging disabled.')
-        
+    if LOGGING:
+        try:
+            from torch.utils.tensorboard import SummaryWriter
+            os.environ['TF_CPP_MIN_LOG_LEVEL'] = '3'
+            writer = SummaryWriter('./logs/exp' + str(EXP))
+            disable_logging = False
+        except:
+            print('torch.utils.tensorboard not found, logging disabled.')
+            disable_logging = True
 
     if USE_POOL:
         from multiprocessing import Pool, cpu_count
@@ -124,7 +136,7 @@ def main():
         mean_score, elite_mean_score = ecosystem.evolve(GAME_SIZE, GEN_SIZE,
                                                         MUT_PROB, pool=pool)
 
-        if LOGGING:
+        if LOGGING and not disable_logging:
             writer.add_scalar('Mean_Score', mean_score, ep+1)
             writer.add_scalar('Elite_Mean_Score', elite_mean_score, ep+1)
 

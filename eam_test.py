@@ -1,10 +1,10 @@
 
-import pickle
+import dill as pickle
 import numpy as np
 
 ###############################################################################
 
-EXP = 3 # Experiment number to test
+EXP = 2 # Experiment number to test
 N_GAMES = 5 # Number of games to test best individual with
 MAX_SPAWNS = None # If None, game ends when agent loses
 NEW_BOARD_SIZE = None#(10, 20) # If None, use ecosystems preset environment
@@ -26,9 +26,9 @@ def main():
                                               ecosystem.env.height)
     ecosystem.env.max_spawns=MAX_SPAWNS
 
-    decision_maker = lambda x,y : (best_individual.evaluate_states(
-                                ecosystem.heuristics.determine_values(x, y)))
-    
+    decision_maker = lambda B, C : (
+                ecosystem.evaluator(*best_individual.model_values,
+                               ecosystem.heuristics.determine_values(B, C)))
     if USE_POOL:
         from multiprocessing import Pool, cpu_count
         pool = Pool(cpu_count())
