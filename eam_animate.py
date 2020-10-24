@@ -203,8 +203,9 @@ def main():
     else:
         pool=None
 
-    decision_maker = lambda x,y : (best_individual.evaluate_states(
-                                ecosystem.heuristics.determine_values(x, y)))
+    decision_maker = lambda B, C : (
+                ecosystem.evaluator(*best_individual.model_values,
+                               ecosystem.heuristics.determine_values(B, C)))
 
     np.random.seed(SEED)
     results = simulate_and_save(ecosystem.env, decision_maker,
