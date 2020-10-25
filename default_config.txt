@@ -1,0 +1,70 @@
+###############################################################################
+
+# Configuration file used by eam_train.py
+# Missing values will attempt to use defaults
+# MODEL_NAME and EXP are required
+
+###############################################################################
+
+# GAME VARIABLES
+
+# No padding on width or height
+# Width must be at least 4
+WIDTH = 6
+# Height must be at least 4
+HEIGHT = 12
+
+# If None, games last until agent loses
+MAX_SPAWNS = None
+
+# If None, all tetrominos are used
+# Else, specifiy pieces by comma seperated list, i.e. 0,1,4,7
+# 0 : O Piece
+# 1 : I Piece
+# 2 : S Piece
+# 3 : Z Piece
+# 4 : L Piece
+# 5 : J Piece
+# 6 : T Piece
+ACTIVE_TETROMINOS = None
+
+###############################################################################
+
+# EVOLUTION VARIABLES
+
+# Model must be stored in ./models; do not include .py
+MODEL_NAME = model_w
+
+# Minimum size is 2
+GEN_SIZE = 100
+
+# Minimum size is 1
+GAME_SIZE = 5
+
+# Must be between 0 and 1
+MUT_PROB = 0.2
+
+# Must be at least 1
+N_EPISODES = 40
+
+###############################################################################
+
+# DATA VARIABLES
+
+# Must be integer
+EXP = 1
+
+# Seconds elapsed before trying to save ecosystem
+SAVE_FREQ = 300
+
+# True or False to make use of multiprocessing [recommended]
+USE_POOL = True
+
+# Must be integer or None to use numpy.random default seed
+SEED = None
+
+# True or False to use tensorboard to log training data
+LOGGING = False
+
+###############################################################################
+# EOF

@@ -3,3 +3,4 @@
 **/__pycache__
 /ecosystems/exp*
 !/ecosystems/exp1
+/ecosystems/config*

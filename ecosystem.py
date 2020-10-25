@@ -141,7 +141,7 @@ class Ecosystem():
 
         return self.base_model._replace(**new_settings)
 
-    def evaluate_population(self, number_of_games, pool=None):
+    def evaluate_population(self, number_of_games, pool=None, quiet=False):
         """Determine the fitness of the current generation.
 
         Parameters
@@ -174,9 +174,13 @@ class Ecosystem():
 
             rewards_achieved.append(reward / number_of_games)
 
-            s = '\r{:d} / {:<3d} Individuals Tested [Best Score: {:d}]'
-            print(s.format(n+1, self.generation_size, all_time_best), end='')
-        print()
+            if not quiet:
+                s = '\r{:d} / {:<3d} Individuals Tested [Best Score: {:d}]'
+                print(s.format(n+1, self.generation_size, all_time_best),
+                      end='')
+        
+        if not quiet:
+            print()
 
         return rewards_achieved
 
@@ -206,17 +210,22 @@ class Ecosystem():
         for v_child, v_husband, v_wife in zip(child.model_values,
                                               husband.model_values,
                                               wife.model_values):
-            slices = np.random.choice(self.N, size=(2,), replace=False)
-            slices.sort()
-            a, b = slices
-            v_child[0:a] = v_husband[0:a]
-            v_child[a:b] = v_wife[a:b]
-            v_child[b::] = v_husband[b::]
+
+            try:
+                slices = np.random.choice(self.N, size=(2,), replace=False)
+                slices.sort()
+                a, b = slices
+                v_child[0:a] = v_husband[0:a]
+                v_child[a:b] = v_wife[a:b]
+                v_child[b::] = v_husband[b::]
+            except:
+                v_child[:] = v_husband.copy()
+            
 
         return child
 
     def evolve(self, number_of_games, generation_size,
-               mutation_probability, pool=None):
+               mutation_probability, pool=None, quiet=False):
         """Evolves the current generation into a new one using their fitness.
 
         Parameters
@@ -240,7 +249,8 @@ class Ecosystem():
         """
 
         fitness_scores = np.array(self.evaluate_population(number_of_games,
-                                                           pool=pool))
+                                                           pool=pool,
+                                                           quiet=quiet))
         mean_population_score = np.sum(fitness_scores) / self.generation_size
 
         elite_set = np.zeros((0,))

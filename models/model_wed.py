@@ -12,6 +12,7 @@ norm_abs_small = lambda size : np.abs(norm_small(size))
 ##############################################################################
 
 # REQUIRED VARIABLES
+
 model_names = ['weight', 'exponent', 'displacement']
 model_sizes = [(None, 1), (None, 1), (None, 1)]
 model_limits = [None, (0, 5), None]

@@ -4,7 +4,7 @@ import numpy as np
 
 ###############################################################################
 
-EXP = 2 # Experiment number to test
+EXP = 3 # Experiment number to test
 N_GAMES = 5 # Number of games to test best individual with
 MAX_SPAWNS = None # If None, game ends when agent loses
 NEW_BOARD_SIZE = None#(10, 20) # If None, use ecosystems preset environment
@@ -19,6 +19,16 @@ def main():
         ecosystem = pickle.load(inputs)
 
     best_individual = ecosystem.generation[0]
+
+    A = best_individual.model_values
+    
+    for v in A:
+        for r in v:
+            for k in r:
+                print('{:8.2f}'.format(k), end=' ')
+            print()
+        print()
+    return
 
     if NEW_BOARD_SIZE is not None:
         ecosystem.env.change_dimensions(*NEW_BOARD_SIZE)

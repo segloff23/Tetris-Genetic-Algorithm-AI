@@ -1,10 +1,13 @@
 
 import time
-import dill as pickle
-#import pickle
 import os
+import argparse
 import sys
-sys.path.append('.') # Seems to prevent issue with multiproccessing
+sys.path.append('.') # Seems to prevent unkown issue with multiproccessing
+
+import dill as pickle
+from pathlib import Path
+from numpy.random import seed
 
 from tetris import Tetris
 from heuristics import Heuristics
@@ -12,30 +15,146 @@ from ecosystem import Ecosystem
 
 ###############################################################################
 
-# GAME VARIABLES
-WIDTH = 6 # No padding
-HEIGHT = 12 # No padding
-MAX_SPAWNS = None # If None, games last until agent loses
-ACTIVE_TETROMINOS = None # If None, all tetrominos are used
+save_load_folder = 'ecosystems'
+log_folder = 'logs'
+save_load_file_path = Path('./' + save_load_folder + '/')
+log_file_path = Path('./' + log_folder + '/')
 
-# EVOLUTION VARIABLES
-MODEL_NAME = 'model_wed'
-GEN_SIZE = 10 # Minimum size is 2
-GAME_SIZE = 1 # Number of games to test fitness over
-MUT_PROB = 0.2 # Probability of an individual gene mutating
-N_EPISODES = 1 # Number of generations to iterate through
+def printf(message, toggle_off):
+    """Modified print() to help toggle messages on/off.
 
-# DATA VARIABLES
-EXP = 2 # Experiment number
-LOAD = False # Load from file given be EXP or not
-SAVE_FREQ = 5 * 60 # How often to save over results in seconds
-USE_POOL = True # Make use of multiprocessing for simulations
-SEED = 1 # Initialize with a specific seed to replicate results
-LOGGING = False # Log data for tensorboard live visualization
+    Parameters
+    ----------
+    message : (str)
+        Message to be printed.
+    toggle_off : (bool)
+        Whether the message should not be printed to console.
 
-###############################################################################
+    Returns
+    -------
+    None.
 
-def load_ecosystem():
+    """
+    if not toggle_off:
+        print(message)
+
+def load_config_settings(file_name, suppress_warnings=False):
+    """Loads settings for eam_train.py from given file.
+
+    Parameters
+    ----------
+    file_name : (str)
+        Name of text file containing settings. Must include '.txt'.
+    suppress_warnings : (bool), optional
+        Do not print warning messages to console. Errors which prevent
+        the run from occuring are still displayed.
+        The default is False.
+
+    Returns
+    -------
+    valid_input : (bool)
+        Truth value of whether the input is valid.
+    inputs : (dict)
+        Set of name, value pairs describing the setting configuration.
+
+    """
+
+    # NAME : DEFAULT [or required if no default exists]
+    keywords = {'WIDTH' : 6,
+                'HEIGHT' : 12,
+                'MAX_SPAWNS' : None,
+                'ACTIVE_TETROMINOS' : None,
+                'MODEL_NAME' : 'required',
+                'GEN_SIZE' : 100,
+                'GAME_SIZE' : 5,
+                'MUT_PROB' : 0.1,
+                'N_EPISODES' : 100,
+                'EXP' : 'required',
+                'SAVE_FREQ' : 300,
+                'USE_POOL' : True,
+                'SEED' : None,
+                'LOGGING' : False}
+
+    # NAME : (type [,type], None acceptable)
+    keyword_types = {'WIDTH' : (int, False), 'HEIGHT' : (int, False),
+                     'MAX_SPAWNS' : (int, True),
+                     'ACTIVE_TETROMINOS' : (list, int, True),
+                     'MODEL_NAME' : (str, False), 'GEN_SIZE' : (int, False),
+                     'GAME_SIZE' : (int, False), 'MUT_PROB' : (float, False),
+                     'N_EPISODES' : (int, False), 'EXP' : (int, False),
+                     'SAVE_FREQ' : (int, False), 'USE_POOL' : (bool, False),
+                     'SEED' : (int, True), 'LOGGING' : (bool, False)}
+
+    invalid_string = 'Warning: Invalid value encountered with key {}.'
+    default_string = 'Warning: Using default value {} for {}.'
+    required_string = 'Error: {} is a required parameter.'
+    unrecognized_string = 'Warning: {} not a recognized key.'
+
+    inputs = {key : 'empty' for key in keywords}
+    with open(file_name, 'r') as file:
+
+        valid_input = True
+        for line in file.readlines():
+            clean_line = line.strip()
+            if len(clean_line) != 0 and clean_line[0] != '#':
+                key, raw_value = line.strip().split('=')
+                key = key.strip().upper()
+                raw_value = raw_value.strip()
+                if key in keywords:
+                    if raw_value.lower() == 'none':
+                        inputs[key] = None
+                    elif keyword_types[key][0] == bool:
+                        value = raw_value.lower()
+                        if value == 'true':
+                            inputs[key] = True
+                        elif value == 'false':
+                            inputs[key] = False
+                        else:
+                            printf(invalid_string.format(key),
+                                   suppress_warnings)
+                    elif keyword_types[key][0] == list:
+                        try:
+                            inputs[key] = [keyword_types[key][1](x) for x in raw_value.split(',')]
+                        except:
+                            printf(invalid_string.format(key),
+                                   suppress_warnings)
+                    else:
+                        try:
+                            inputs[key] = keyword_types[key][0](raw_value)
+                        except:
+                            printf(invalid_string.format(key),
+                                   suppress_warnings)
+                elif not suppress_warnings:
+                    printf(unrecognized_string.format(key),
+                                   suppress_warnings)
+
+    valid_input = True
+    for key in inputs:
+        if inputs[key] == 'empty':
+            if keywords[key] != 'required':
+                inputs[key] = keywords[key]
+                if not suppress_warnings:
+                    printf(default_string.format(keywords[key], key),
+                                   suppress_warnings)
+            else:
+                valid_input = False
+                printf(required_string.format(key),
+                                   suppress_warnings)
+        elif inputs[key] == None:
+            if not keyword_types[key][-1]:
+                if keywords[key] != 'required':
+                    inputs[key] = keywords[key]
+                    if not suppress_warnings:
+                        printf(default_string.format(keywords[key], key),
+                                   suppress_warnings)
+                else:
+                    valid_input = False
+                    printf(required_string.format(key),
+                                   suppress_warnings)
+
+    return valid_input, inputs
+
+def load_ecosystem(EXP, quiet):
     """Loads an ecosystem from a given file
 
     Returns
@@ -44,13 +163,15 @@ def load_ecosystem():
         The ecosystem class which evolution will take place in.
     """
 
-    with open('./ecosystems/exp' + str(EXP), 'rb') as inputs:
+    file_name = save_load_file_path / ('exp' + str(EXP))
+
+    with open(file_name, 'rb') as inputs:
         ecosystem = pickle.load(inputs)
-    print('Ecosystem created.')
+    printf('Ecosystem created.', quiet)
 
     return ecosystem
 
-def validate_save_file():
+def validate_save_file(EXP, quiet):
     """Verifies the user wants to use the given experiment number.
 
     Returns
@@ -60,7 +181,8 @@ def validate_save_file():
 
     """
 
-    experiments = [int(f.name[3::]) for f in os.scandir('./ecosystems')]
+    experiments = [int(f.name[3::]) for f in os.scandir(save_load_file_path)
+                   if 'config' not in f.name]
     if EXP in experiments:
         s = 'Warning: An ecosystem exists for experiment #{}.\n'
         print(s.format(EXP) +'This file will be overwritten.')
@@ -70,87 +192,135 @@ def validate_save_file():
             if response == 'n':
                 return False
             elif response == 'y':
-                print()
+                printf('', quiet)
                 return True
             else:
                 print('Invalid input. Please try again.', end='')
     else:
         return True
 
-def main():
+def main(argv):
     """Evolve an ecosystem to play Tetris with the given constant parameters.
     """
 
-    if SEED is not None:
-        from numpy.random import seed
-        seed(SEED)
+    config_help = 'path of file for training configuration, include .txt'
+    warnings_help = ('supress warning messages during configuration file'
+                     + 'processing')
+    quiet_help = ('supress console output during training, '
+                  + 'except critical errors')
+    load_help = ('load an experiment given by its number, and use the saved '
+                 + 'configuration or the one specified by --config')
 
-    env = Tetris(width=WIDTH, height=HEIGHT, max_spawns=MAX_SPAWNS,
-                 active_tetrominos=ACTIVE_TETROMINOS)
+    parser = argparse.ArgumentParser()
+    parser.add_argument('-c', '--config', help=config_help)
+    parser.add_argument('-l', '--load', type=int, help=load_help)
+    parser.add_argument('-w', '--warnings', action='store_true',
+                        help=warnings_help)
+    parser.add_argument('-q', '--quiet', action='store_true',
+                        help=quiet_help)
+    args = vars(parser.parse_args())
+
+    quiet = args['quiet']
+    
+    if args['load'] is not None:
+        if args['config'] is None:
+            args['config'] = save_load_file_path / ('config_exp'
+                                                    + str(args['load']))
+    else:    
+        if args['config'] is None:
+            args['config'] = Path('./') / 'default_config.txt'
+
+    valid, settings = load_config_settings(args['config'],
+                                           suppress_warnings=args['warnings'])
+
+    if not valid:
+        print('Unable to solve configuration file. Exiting.')
+        sys.exit(1)
+
+    seed(settings['SEED'])
+    env = Tetris(width=settings['WIDTH'], height=settings['HEIGHT'],
+                 max_spawns=settings['MAX_SPAWNS'],
+                 active_tetrominos=settings['ACTIVE_TETROMINOS'])
     heuristics = Heuristics(env)
 
-    print()
-    if LOAD:
-        ecosystem = load_ecosystem()
+    printf('', quiet)
+    if args['load'] is not None:
+        ecosystem = load_ecosystem(settings['EXP'], quiet)
     else:
-        valid_save = validate_save_file()
+        valid_save = validate_save_file(settings['EXP'], quiet)
         if not valid_save:
             return
         else:
             from importlib import import_module
             from ecosystem import generate_model
 
-            model_generator = import_module('models.' + MODEL_NAME)
+            with open(args['config'], 'r') as file:       
+                config_data = file.readlines()
+            
+            config_save_name = 'config_exp' + str(settings['EXP'])
+            with open(save_load_file_path / (config_save_name), 'w') as file:
+                file.write(''.join(config_data))
+
+            model_generator = import_module('models.'
+                                            + settings['MODEL_NAME'])
             model_settings, evaluator = model_generator.get_model_settings()
             model = generate_model(*model_settings)
 
-            ecosystem = Ecosystem(env, heuristics, GEN_SIZE, model, evaluator,
-                                  MODEL_NAME)
-            print('Ecosystem created.')
+            ecosystem = Ecosystem(env, heuristics, settings['GEN_SIZE'],
+                                  model, evaluator,
+                                  settings['MODEL_NAME'])
+            printf('Ecosystem created.', quiet)
 
-    if LOGGING:
+    if settings['LOGGING']:
         try:
             from torch.utils.tensorboard import SummaryWriter
             os.environ['TF_CPP_MIN_LOG_LEVEL'] = '3'
-            writer = SummaryWriter('./logs/exp' + str(EXP))
+            log_folder_name = log_file_path / ('exp' + str(settings['EXP']))
+            writer = SummaryWriter(log_folder_name)
             disable_logging = False
         except:
-            print('torch.utils.tensorboard not found, logging disabled.')
+            printf('torch.utils.tensorboard not found, logging disabled.',
+                   args['warnings'])
             disable_logging = True
 
-    if USE_POOL:
+    if settings['USE_POOL']:
         from multiprocessing import Pool, cpu_count
         pool = Pool(cpu_count())
     else:
         pool = None
 
-    s ='Saving to /ecosystems/exp{} every {} seconds.'
-    print(s.format(EXP, SAVE_FREQ))
-    print('Beginning evolution.')
-    print()
+    save_file_name = save_load_file_path / ('exp' + str(settings['EXP']))
+
+    s ='Saving to /' + save_load_folder + '/exp{} every {} seconds.'
+    printf(s.format(settings['EXP'], settings['SAVE_FREQ']), quiet)
+    printf('Beginning evolution.', quiet)
+    printf('', quiet)
 
     report_string = 'Episode {}: {:7.2f} / {:<7.2f}'
     start = time.time()
-    for ep in range(N_EPISODES):
+    for ep in range(settings['N_EPISODES']):
 
-        mean_score, elite_mean_score = ecosystem.evolve(GAME_SIZE, GEN_SIZE,
-                                                        MUT_PROB, pool=pool)
+        mean_score, elite_mean_score = ecosystem.evolve(settings['GAME_SIZE'],
+                                                        settings['GEN_SIZE'],
+                                                        settings['MUT_PROB'],
+                                                        pool=pool,
+                                                        quiet=quiet)
 
-        if LOGGING and not disable_logging:
+        if settings['LOGGING'] and not disable_logging:
             writer.add_scalar('Mean_Score', mean_score, ep+1)
             writer.add_scalar('Elite_Mean_Score', elite_mean_score, ep+1)
 
-        print(report_string.format(ecosystem.generation_number,
-                                   mean_score, elite_mean_score))
+        printf(report_string.format(ecosystem.generation_number,
+                                   mean_score, elite_mean_score), quiet)
 
-        if (ep == 0) or (time.time() - start) >= SAVE_FREQ:
-            with open('./ecosystems/exp' + str(EXP), 'wb') as output:
+        if (ep == 0) or (time.time() - start) >= settings['SAVE_FREQ']:
+            with open(save_file_name, 'wb') as output:
                 pickle.dump(ecosystem, output, -1)
-            print('Ecosystem saved.')
+            printf('Ecosystem saved.', quiet)
             start = time.time()
-        print()
+        printf('', quiet)
 
 if __name__ == '__main__':
-    main()
+    main(sys.argv[1::])
 
 #EOF
