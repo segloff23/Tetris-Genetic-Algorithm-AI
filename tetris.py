@@ -595,13 +595,16 @@ class Tetris():
 
         return image[4::, :]
 
-    def simulate(self, decision_maker, pool=None):
+    def simulate(self, decision_maker, pool=None, print_steps=False,
+                 log_images=False):
         if pool is not None:
-            return simulate_with_pool(self, decision_maker, pool)
+            return simulate_with_pool(self, decision_maker, pool, print_steps,
+                                      log_images)
         else:
-            return simulate_without_pool(self, decision_maker)
+            return simulate_without_pool(self, decision_maker, print_steps,
+                                         log_images)
 
-def simulate_with_pool(env, decision_maker, pool):
+def simulate_with_pool(env, decision_maker, pool, print_steps, log_images):
     """Using multiprocessing, simulates a game of Tetris with lookahead.
 
     Parameters
@@ -627,6 +630,8 @@ def simulate_with_pool(env, decision_maker, pool):
     """
 
     env.reset()
+    if log_images:
+        image_list = [env.draw()]
     while not env.game_over:
 
         potential_boards, _ = env.generate_future_boards(None)
@@ -644,10 +649,19 @@ def simulate_with_pool(env, decision_maker, pool):
         state_of_choice_index = potential_board_indexes[
                                                 next_state_of_choice_index]
         env.step(potential_boards[state_of_choice_index])
+        if log_images:
+            if potential_next_clears[state_of_choice_index]:
+                transition = env.intermediate_boards[state_of_choice_index]
+                image_list.append(env.draw(alternate_board=transition))
+            image_list.append(env.draw())
+        if print_steps:
+            print('\rStep {}'.format(env.tetrominos_spawned), end='')
+    if print_steps:
+        print()
 
     return env.tetrominos_spawned
 
-def simulate_without_pool(env, decision_maker):
+def simulate_without_pool(env, decision_maker, print_steps, log_images):
     """Without multiprocessing, simulates a game of Tetris with lookahead.
 
     Parameters
@@ -671,6 +685,8 @@ def simulate_without_pool(env, decision_maker):
     """
 
     env.reset()
+    if log_images:
+        image_list = [env.draw()]
     while not env.game_over:
         potential_boards, _ = env.generate_future_boards(None)
 
@@ -692,6 +708,15 @@ def simulate_without_pool(env, decision_maker):
         board_of_choice_index = initial_board_indexes[
                                             next_board_of_choice_index]
         env.step(potential_boards[board_of_choice_index])
+        if log_images:
+            if potential_next_clears[board_of_choice_index]:
+                transition = env.intermediate_boards[board_of_choice_index]
+                image_list.append(env.draw(alternate_board=transition))
+            image_list.append(env.draw())
+        if print_steps:
+            print('\rStep {}'.format(env.tetrominos_spawned), end='')
+    if print_steps:
+        print()
 
     return env.tetrominos_spawned
 
