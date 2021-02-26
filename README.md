@@ -7,12 +7,15 @@ Required modules:
 numpy
 
 matplotlib
+
 Optional modules for visualization:
 
 cv2
+
 Optional modules for data tracking:
 
 pytorch
+
 Currently all parameters are adjusted within the header of each script.
 
 Main scripts:
